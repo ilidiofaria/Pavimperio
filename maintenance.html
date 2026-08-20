@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="pt-PT">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="theme-color" content="#10263d" />
+  <title>Pav Império | Manutenção & Qualidade</title>
+  <link rel="stylesheet" href="./styles.css" />
+</head>
+<body>
+  <div id="app-shell">
+    <aside class="sidebar" id="sidebar">
+      <div class="brand">
+        <div class="brand-mark">PI</div>
+        <div>
+          <strong>Pav Império</strong>
+          <span>Gestão Integrada</span>
+        </div>
+      </div>
+
+      <div class="module-switch" aria-label="Módulos">
+        <a class="module-link" href="./index.html">Produção</a>
+        <a class="module-link active" href="./maintenance.html">Manutenção & Qualidade</a>
+      </div>
+
+      <nav class="nav" aria-label="Navegação principal">
+        <button class="nav-item active" data-view="maintenance-dashboard"><span>01</span> Cockpit</button>
+        <button class="nav-item" data-view="assets"><span>02</span> Equipamentos</button>
+        <button class="nav-item" data-view="workorders"><span>03</span> Ordens de manutenção</button>
+        <button class="nav-item" data-view="quality"><span>04</span> Qualidade</button>
+        <button class="nav-item" data-view="documents"><span>05</span> Documentação técnica</button>
+        <button class="nav-item" data-view="assistant"><span>06</span> Assistente IA</button>
+        <button class="nav-item" data-view="analytics"><span>07</span> Indicadores & integrações</button>
+        <button class="nav-item" data-view="maintenance-audit"><span>08</span> Histórico & auditoria</button>
+      </nav>
+
+      <div class="sidebar-foot">
+        <div class="environment-pill"><span class="dot"></span> Sistema operacional</div>
+        <small>Manutenção, qualidade e conhecimento técnico integrados.</small>
+      </div>
+    </aside>
+
+    <main class="main">
+      <header class="topbar">
+        <div class="topbar-left">
+          <button id="menu-toggle" class="icon-button mobile-only" aria-label="Abrir menu">☰</button>
+          <div>
+            <p class="eyebrow">Gestão inteligente de manutenção e qualidade</p>
+            <h1 id="view-title">Cockpit de manutenção</h1>
+          </div>
+        </div>
+        <div class="topbar-actions">
+          <button class="secondary-button" id="maintenance-search-button">Pesquisar</button>
+          <button class="secondary-button" id="maintenance-sync-button">Atualizar dados</button>
+          <button class="primary-button" id="new-maintenance-order-button">Nova ordem</button>
+        </div>
+      </header>
+
+      <section id="view-root" class="view-root" aria-live="polite"></section>
+    </main>
+  </div>
+
+  <div id="modal-root"></div>
+  <div id="toast-root" class="toast-root" aria-live="polite"></div>
+
+  <script src="./maintenance.js"></script>
+</body>
+</html>
