@@ -1,6 +1,6 @@
 const state = {
   currentView: 'dashboard',
-  syncedAt: '20/08/2026 14:30',
+  syncedAt: '20/08/2026 16:18',
   products: [
     {id:'P1',name:'Viga P1'}, {id:'P2',name:'Viga P2'}, {id:'P3',name:'Viga P3'},
     {id:'P4',name:'Viga P4'}, {id:'P5',name:'Viga P5'}, {id:'P6',name:'Viga P6'}
@@ -33,48 +33,77 @@ const state = {
     {id:'OL-260501',cut:'OC-260805',product:'P1',qty:16,destination:'Stock B',status:'Concluída'}
   ],
   audit: [
-    {when:'20/08/2026 13:44',user:'Catarina',action:'Alteração de prioridade',detail:'ENC-260823 passou de Normal para Alta. Motivo: compromisso comercial.'},
-    {when:'20/08/2026 11:12',user:'Sistema',action:'Alerta automático',detail:'Stock P2 insuficiente para ENC-260821. Necessidade descoberta: 12 unidades.'},
+    {when:'20/08/2026 15:44',user:'Catarina',action:'Alteração de prioridade',detail:'ENC-260823 passou de Normal para Alta. Motivo: compromisso comercial.'},
+    {when:'20/08/2026 14:12',user:'Sistema',action:'Alerta automático',detail:'Stock P2 insuficiente para ENC-260821. Necessidade descoberta: 12 unidades.'},
     {when:'20/08/2026 09:02',user:'Carlos Silva',action:'Execução',detail:'OP-260814 iniciada na Pista 1.'},
     {when:'20/08/2026 08:51',user:'Planeamento',action:'Replaneamento',detail:'OP-260814 antecipada. Motivo: stock abaixo do mínimo.'}
   ]
 };
 
 const titles = {
-  dashboard:'Cockpit operacional', orders:'Encomendas & stock', planning:'Planeamento da produção', floor:'Chão de fábrica',
-  cutting:'Corte & levantamento', trace:'Rastreabilidade ponta a ponta', history:'Histórico & auditoria', integrations:'Integrações & evolução'
+  dashboard:'Cockpit operacional',
+  orders:'Encomendas & stock',
+  planning:'Planeamento da produção',
+  floor:'Chão de fábrica',
+  cutting:'Corte & levantamento',
+  trace:'Rastreabilidade ponta a ponta',
+  history:'Histórico & auditoria',
+  integrations:'Integrações & inteligência'
 };
+
 const root = document.getElementById('view-root');
 const modalRoot = document.getElementById('modal-root');
 const toastRoot = document.getElementById('toast-root');
 
 function badge(text){
-  const t=String(text).toLowerCase(); let cls='info';
-  if(t.includes('concl')||t.includes('coberta')||t.includes('cortada')) cls='good';
+  const t=String(text).toLowerCase();
+  let cls='info';
+  if(t.includes('concl')||t.includes('coberta')||t.includes('cortada')||t.includes('ativo')||t.includes('sincronizado')) cls='good';
   if(t.includes('parcial')||t.includes('pend')||t.includes('cura')||t.includes('aguard')) cls='warn';
-  if(t.includes('alta')||t.includes('erro')||t.includes('atras')) cls='bad';
+  if(t.includes('alta')||t.includes('erro')||t.includes('atras')||t.includes('crítico')) cls='bad';
   return `<span class="badge ${cls}">${text}</span>`;
 }
+
 function toast(message,type='success'){
-  const n=document.createElement('div'); n.className=`toast ${type}`; n.textContent=message; toastRoot.appendChild(n); setTimeout(()=>n.remove(),3200);
+  const n=document.createElement('div');
+  n.className=`toast ${type}`;
+  n.textContent=message;
+  toastRoot.appendChild(n);
+  setTimeout(()=>n.remove(),3200);
 }
-function esc(v){ return String(v??'').replace(/[&<>'"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c])); }
+
 function modal(title,body,footer=''){
   modalRoot.innerHTML=`<div class="modal-backdrop" data-close="1"><div class="modal" onclick="event.stopPropagation()"><div class="modal-head"><h2>${title}</h2><button class="icon-button" data-close="1">✕</button></div><div class="modal-body">${body}</div>${footer?`<div class="modal-foot">${footer}</div>`:''}</div></div>`;
   modalRoot.querySelectorAll('[data-close]').forEach(x=>x.onclick=()=>modalRoot.innerHTML='');
 }
+
 function exportCSV(){
   const rows=[['Encomenda','Cliente','Produto','Quantidade','Cobertura','Prioridade','Estado'],...state.orders.map(o=>[o.id,o.client,o.product,o.qty,o.covered,o.priority,o.status])];
   const csv=rows.map(r=>r.map(v=>`"${String(v).replaceAll('"','""')}"`).join(';')).join('\n');
-  const blob=new Blob([csv],{type:'text/csv;charset=utf-8'}); const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download='pavimperio-encomendas.csv'; a.click(); URL.revokeObjectURL(a.href);
-  toast('Dados exportados em formato standard CSV.');
+  const blob=new Blob([csv],{type:'text/csv;charset=utf-8'});
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(blob);
+  a.download='pavimperio-encomendas.csv';
+  a.click();
+  URL.revokeObjectURL(a.href);
+  toast('Dados exportados em CSV.');
 }
+
 function uncovered(o){ return Math.max(0,o.qty-o.covered); }
 function workInProgress(){ return state.productionOrders.filter(o=>!['Concluída','Stock'].includes(o.status)).length; }
+function projectedStock(product){
+  const current=state.stock[product]||0;
+  const incoming=state.productionOrders.filter(p=>p.product===product && ['Planeada','Em produção','Cura'].includes(p.status)).reduce((s,p)=>s+p.qty,0);
+  const demand=state.orders.filter(o=>o.product===product).reduce((s,o)=>s+uncovered(o),0);
+  return current+incoming-demand;
+}
+
 function render(){
   document.getElementById('view-title').textContent=titles[state.currentView];
   document.querySelectorAll('.nav-item').forEach(b=>b.classList.toggle('active',b.dataset.view===state.currentView));
-  const fn=views[state.currentView]||views.dashboard; root.innerHTML=fn(); bindView();
+  const fn=views[state.currentView]||views.dashboard;
+  root.innerHTML=fn();
+  bindView();
 }
 
 const views={
@@ -84,86 +113,129 @@ const views={
       <div class="card kpi"><div class="label">Encomendas abertas</div><div class="value">${state.orders.length}</div><div class="delta">PHC sincronizado ${state.syncedAt}</div></div>
       <div class="card kpi"><div class="label">Necessidade sem cobertura</div><div class="value">${uncoveredQty}</div><div class="delta bad">unidades a planear</div></div>
       <div class="card kpi"><div class="label">Work in Progress</div><div class="value">${workInProgress()}</div><div class="delta">ordens ativas</div></div>
-      <div class="card kpi"><div class="label">Pistas ocupadas</div><div class="value">${state.lanes.filter(l=>l.status!=='Livre').length}/${state.lanes.length}</div><div class="delta good">visibilidade em tempo quase real</div></div>
+      <div class="card kpi"><div class="label">Pistas ocupadas</div><div class="value">${state.lanes.filter(l=>l.status!=='Livre').length}/${state.lanes.length}</div><div class="delta good">atualização operacional contínua</div></div>
     </div>
     <div class="grid two" style="margin-top:16px">
-      <div class="card"><div class="section-head"><div><h2>Exceções prioritárias</h2><p>Sistema sinaliza necessidades sem cobertura e riscos de execução.</p></div></div>
+      <div class="card"><div class="section-head"><div><h2>Exceções prioritárias</h2><p>Necessidades sem cobertura e riscos de execução.</p></div></div>
         ${state.orders.filter(o=>uncovered(o)>0).map(o=>`<div class="job ${o.priority==='Alta'?'priority':''}"><strong>${o.id} · ${o.product}</strong><small>${o.client} · faltam ${uncovered(o)} un. · entrega ${o.due}</small><div style="margin-top:8px">${badge(o.priority)} ${badge(o.status)}</div></div>`).join('')}
       </div>
       <div class="card"><div class="section-head"><div><h2>Estado das pistas</h2><p>Planeamento e execução no mesmo cockpit.</p></div><button class="secondary-button" data-go="planning">Abrir planeamento</button></div>
         ${state.lanes.map(l=>`<div style="margin:13px 0"><div style="display:flex;justify-content:space-between"><strong>${l.name} · ${l.product}</strong>${badge(l.status)}</div><div class="note">${l.orderId} · ${l.qty}/${l.capacity} un. · corte a partir de ${l.availableCut}</div><div class="progress" style="margin-top:7px"><span style="width:${l.progress}%"></span></div></div>`).join('')}
       </div>
     </div>
-    <div class="card" style="margin-top:16px"><div class="section-head"><div><h2>Fluxo operacional digital</h2><p>Rastreabilidade contínua da encomenda ao stock.</p></div></div>
-      <div class="grid three">${['Encomendas e stock','Planeamento e produção','Corte, levantamento e stock'].map((x,i)=>`<div class="feature"><div class="id">ETAPA 0${i+1}</div><strong>${x}</strong><p>${['Integração PHC, cobertura e prioridades.','Pistas digitais, ordens e estados em tempo real.','Ordens digitais, confirmação e atualização de stock.'][i]}</p></div>`).join('')}</div>
+    <div class="card" style="margin-top:16px"><div class="section-head"><div><h2>Fluxo operacional</h2><p>Rastreabilidade contínua da encomenda ao stock.</p></div></div>
+      <div class="grid three">
+        <div class="feature"><div class="id">ETAPA 01</div><strong>Encomendas e stock</strong><p>Integração PHC, cobertura e prioridades.</p></div>
+        <div class="feature"><div class="id">ETAPA 02</div><strong>Planeamento e produção</strong><p>Pistas, ordens, capacidade e estados operacionais.</p></div>
+        <div class="feature"><div class="id">ETAPA 03</div><strong>Corte, levantamento e stock</strong><p>Ordens digitais, confirmação e atualização de stock.</p></div>
+      </div>
     </div>`;
   },
+
   orders(){
-    return `<div class="callout"><strong>Integração PHC simulada</strong>As encomendas e stocks abaixo representam os dados que serão lidos do PHC. A escrita de stock só deverá ser ativada após validação técnica do parceiro PHC.</div>
-    <div class="section-head"><div><h2>Encomendas</h2><p>Cobertura automática por stock e identificação de necessidades.</p></div><div class="toolbar"><input id="order-filter" placeholder="Pesquisar encomenda ou cliente"><button class="secondary-button" id="export-csv">Exportar CSV</button></div></div>
-    <div class="table-wrap"><table><thead><tr><th>Encomenda</th><th>Cliente</th><th>Produto</th><th>Qtd.</th><th>Stock coberto</th><th>Descoberto</th><th>Entrega</th><th>Prioridade</th><th>Ação</th></tr></thead><tbody id="orders-body">
-      ${orderRows(state.orders)}
-    </tbody></table></div>
+    return `<div class="section-head"><div><h2>Encomendas</h2><p>Cobertura automática por stock e identificação de necessidades.</p></div><div class="toolbar"><input id="order-filter" placeholder="Pesquisar encomenda ou cliente"><button class="secondary-button" id="export-csv">Exportar CSV</button></div></div>
+    <div class="table-wrap"><table><thead><tr><th>Encomenda</th><th>Cliente</th><th>Produto</th><th>Qtd.</th><th>Stock coberto</th><th>Descoberto</th><th>Entrega</th><th>Prioridade</th><th>Ação</th></tr></thead><tbody id="orders-body">${orderRows(state.orders)}</tbody></table></div>
     <div class="grid three" style="margin-top:16px">${Object.entries(state.stock).map(([p,q])=>`<div class="card kpi"><div class="label">Stock ${p}</div><div class="value">${q}</div><div class="delta">unidades disponíveis</div></div>`).join('')}</div>`;
   },
+
   planning(){
-    return `<div class="section-head"><div><h2>Plano digital das pistas</h2><p>Plano base, produção em curso, capacidade e replaneamento Human in the Loop.</p></div><div class="toolbar"><button class="primary-button" id="suggest-plan">Gerar sugestão</button><button class="secondary-button" id="create-plan">Criar ordem</button></div></div>
+    return `<div class="section-head"><div><h2>Plano digital das pistas</h2><p>Plano base, produção em curso, capacidade e replaneamento controlado.</p></div><div class="toolbar"><button class="primary-button" id="suggest-plan">Otimizar plano</button><button class="secondary-button" id="create-plan">Criar ordem</button></div></div>
     <div class="lanes">${state.lanes.map(l=>`<div class="lane"><h3>${l.name} ${badge(l.status)}</h3><div class="job ${l.priority?'priority':''}"><strong>${l.orderId} · ${l.product}</strong><small>${l.qty} unidades · capacidade ${l.capacity}</small><div class="progress" style="margin:10px 0"><span style="width:${l.progress}%"></span></div><small>Corte possível: ${l.availableCut}</small><div class="row-actions" style="margin-top:10px"><button class="secondary-button" data-replan="${l.orderId}">Replanear</button><button class="secondary-button" data-details="${l.orderId}">Detalhe</button></div></div></div>`).join('')}</div>
-    <div class="grid two" style="margin-top:16px"><div class="card"><h2>Regras aplicadas</h2><div class="timeline"><div class="timeline-item"><strong>1. Cobrir encomenda com stock</strong><span>Evita produção desnecessária quando existe produto disponível.</span></div><div class="timeline-item"><strong>2. Procurar produção compatível em curso</strong><span>Enquanto não houver corte, a produção pode ser afetada a novas encomendas.</span></div><div class="timeline-item"><strong>3. Sugerir nova produção</strong><span>Prioriza descobertos, data de entrega e capacidade.</span></div><div class="timeline-item"><strong>4. Validação humana obrigatória</strong><span>Nenhuma sugestão altera o plano automaticamente.</span></div></div></div>
-    <div class="card"><h2>Necessidades sem cobertura</h2>${state.orders.filter(o=>uncovered(o)>0).map(o=>`<div class="job ${o.priority==='Alta'?'priority':''}"><strong>${o.product}: ${uncovered(o)} un.</strong><small>${o.id} · ${o.client} · ${o.due}</small></div>`).join('')}</div></div>`;
+    <div class="grid two" style="margin-top:16px">
+      <div class="card"><h2>Critérios de planeamento</h2><div class="timeline">
+        <div class="timeline-item"><strong>1. Cobertura por stock</strong><span>Prioriza utilização de produto disponível.</span></div>
+        <div class="timeline-item"><strong>2. Produção compatível em curso</strong><span>Produção ainda não cortada pode ser afetada a novas encomendas.</span></div>
+        <div class="timeline-item"><strong>3. Capacidade e datas</strong><span>Ordena necessidades segundo prioridade, entrega e capacidade disponível.</span></div>
+        <div class="timeline-item"><strong>4. Aprovação do responsável</strong><span>Alterações ao plano são confirmadas e ficam auditadas.</span></div>
+      </div></div>
+      <div class="card"><h2>Necessidades sem cobertura</h2>${state.orders.filter(o=>uncovered(o)>0).map(o=>`<div class="job ${o.priority==='Alta'?'priority':''}"><strong>${o.product}: ${uncovered(o)} un.</strong><small>${o.id} · ${o.client} · ${o.due}</small></div>`).join('')}</div>
+    </div>`;
   },
+
   floor(){
-    return `<div class="section-head"><div><h2>Execução no chão de fábrica</h2><p>Interface simplificada para tablet ou terminal industrial.</p></div></div>
+    return `<div class="section-head"><div><h2>Execução no chão de fábrica</h2><p>Ordens digitais e atualização do estado da produção.</p></div></div>
     <div class="grid three">${state.productionOrders.map(o=>`<div class="card"><div style="display:flex;justify-content:space-between;gap:8px"><div><div class="eyebrow">${o.lane}</div><h2>${o.id} · ${o.product}</h2></div>${badge(o.status)}</div><p><strong>${o.qty}</strong> unidades · Operador: ${o.operator}</p><div class="row-actions">${o.status==='Planeada'?`<button class="primary-button" data-start="${o.id}">Iniciar</button>`:''}${o.status==='Em produção'?`<button class="primary-button" data-finish="${o.id}">Concluir produção</button>`:''}<button class="secondary-button" data-exception="${o.id}">Registar exceção</button></div></div>`).join('')}</div>
-    <div class="card" style="margin-top:16px"><h2>Estados normalizados</h2><p>Planeada → Preparação → Em produção → Cura → Disponível para corte → Cortada → Levantada → Entrada em stock.</p></div>`;
+    <div class="card" style="margin-top:16px"><h2>Fluxo de estados</h2><p>Planeada → Preparação → Em produção → Cura → Disponível para corte → Cortada → Levantada → Entrada em stock.</p></div>`;
   },
+
   cutting(){
-    return `<div class="grid two"><div><div class="section-head"><div><h2>Ordens de corte</h2><p>Medidas digitais, associação a encomenda e registo de divergências.</p></div></div><div class="table-wrap"><table><thead><tr><th>Ordem</th><th>Origem</th><th>Produto</th><th>Qtd.</th><th>Medida</th><th>Destino</th><th>Estado</th><th>Ação</th></tr></thead><tbody>${state.cutting.map(c=>`<tr><td><strong>${c.id}</strong></td><td>${c.production}</td><td>${c.product}</td><td>${c.plannedQty}</td><td>${c.length}m</td><td>${c.linkedOrder}</td><td>${badge(c.status)}</td><td><div class="row-actions">${c.status!=='Cortada'?`<button class="secondary-button" data-cut="${c.id}">Confirmar corte</button>`:''}<button class="ghost-button" data-cut-deviation="${c.id}">Desvio</button></div></td></tr>`).join('')}</tbody></table></div></div>
-    <div><div class="section-head"><div><h2>Ordens de levantamento</h2><p>Substitui a circulação de papel e prepara a entrada em stock.</p></div></div><div class="table-wrap"><table><thead><tr><th>Ordem</th><th>Corte</th><th>Produto</th><th>Qtd.</th><th>Destino</th><th>Estado</th><th>Ação</th></tr></thead><tbody>${state.lifting.map(l=>`<tr><td><strong>${l.id}</strong></td><td>${l.cut}</td><td>${l.product}</td><td>${l.qty}</td><td>${l.destination}</td><td>${badge(l.status)}</td><td>${l.status!=='Concluída'?`<button class="primary-button" data-lift="${l.id}">Confirmar</button>`:'Concluída'}</td></tr>`).join('')}</tbody></table></div></div></div>`;
+    return `<div class="grid two">
+      <div><div class="section-head"><div><h2>Ordens de corte</h2><p>Medidas, associação a encomenda e controlo de divergências.</p></div></div><div class="table-wrap"><table><thead><tr><th>Ordem</th><th>Origem</th><th>Produto</th><th>Qtd.</th><th>Medida</th><th>Destino</th><th>Estado</th><th>Ação</th></tr></thead><tbody>${state.cutting.map(c=>`<tr><td><strong>${c.id}</strong></td><td>${c.production}</td><td>${c.product}</td><td>${c.plannedQty}</td><td>${c.length}m</td><td>${c.linkedOrder}</td><td>${badge(c.status)}</td><td><div class="row-actions">${c.status!=='Cortada'?`<button class="secondary-button" data-cut="${c.id}">Confirmar corte</button>`:''}<button class="ghost-button" data-cut-deviation="${c.id}">Desvio</button></div></td></tr>`).join('')}</tbody></table></div></div>
+      <div><div class="section-head"><div><h2>Ordens de levantamento</h2><p>Confirmação operacional e atualização de stock.</p></div></div><div class="table-wrap"><table><thead><tr><th>Ordem</th><th>Corte</th><th>Produto</th><th>Qtd.</th><th>Destino</th><th>Estado</th><th>Ação</th></tr></thead><tbody>${state.lifting.map(l=>`<tr><td><strong>${l.id}</strong></td><td>${l.cut}</td><td>${l.product}</td><td>${l.qty}</td><td>${l.destination}</td><td>${badge(l.status)}</td><td>${l.status!=='Concluída'?`<button class="primary-button" data-lift="${l.id}">Confirmar</button>`:'Concluída'}</td></tr>`).join('')}</tbody></table></div></div>
+    </div>`;
   },
+
   trace(){
     const o=state.orders[0];
-    return `<div class="section-head"><div><h2>Genealogia digital</h2><p>Pesquisar uma encomenda e seguir a execução desde o PHC até ao stock.</p></div><div class="toolbar"><select id="trace-select">${state.orders.map(x=>`<option value="${x.id}">${x.id} · ${x.client}</option>`).join('')}</select><button class="secondary-button" id="trace-run">Pesquisar</button></div></div><div id="trace-result">${traceHTML(o.id)}</div>`;
+    return `<div class="section-head"><div><h2>Genealogia digital</h2><p>Seguimento integral da encomenda até à entrada em stock.</p></div><div class="toolbar"><select id="trace-select">${state.orders.map(x=>`<option value="${x.id}">${x.id} · ${x.client}</option>`).join('')}</select><button class="secondary-button" id="trace-run">Pesquisar</button></div></div><div id="trace-result">${traceHTML(o.id)}</div>`;
   },
+
   history(){
-    return `<div class="section-head"><div><h2>Audit trail e histórico</h2><p>Plano inicial, alterações, exceções, utilizadores e timestamps preservados.</p></div><button class="secondary-button" id="export-audit">Exportar histórico</button></div>
+    return `<div class="section-head"><div><h2>Audit trail e histórico</h2><p>Plano inicial, alterações, exceções, utilizadores e timestamps.</p></div><button class="secondary-button" id="export-audit">Exportar histórico</button></div>
     <div class="card"><div class="timeline">${state.audit.map(a=>`<div class="timeline-item"><strong>${a.action}</strong><span>${a.when} · ${a.user}</span><p>${a.detail}</p></div>`).join('')}</div></div>
-    <div class="card" style="margin-top:16px"><h2>Causas normalizadas de replaneamento</h2><div class="toolbar">${['Urgência comercial','Stock abaixo do mínimo','Avaria / indisponibilidade','Qualidade','Capacidade','Alteração de encomenda','Outro'].map(x=>`<span class="badge info">${x}</span>`).join('')}</div></div>`;
+    <div class="card" style="margin-top:16px"><h2>Causas de replaneamento</h2><div class="toolbar">${['Urgência comercial','Stock abaixo do mínimo','Avaria / indisponibilidade','Qualidade','Capacidade','Alteração de encomenda','Outro'].map(x=>`<span class="badge info">${x}</span>`).join('')}</div></div>`;
   },
+
   integrations(){
-    const features=[
-      ['RF01–02','Integração PHC','Encomendas e stock integrados com sincronização simulada.','Must'],
-      ['RF03–06','Modelo produtivo','Seis tipologias, pistas e plano base/digital.','Must'],
-      ['RF07–11','Apoio ao planeamento','Sugestões, cobertura por stock e janela pré-corte.','Should/Must'],
-      ['RF12–16','Ordens de produção','Ordens digitais, execução em terminal e estados normalizados.','Must'],
-      ['RF17–24','Corte, levantamento e stock','Ordens digitais, medidas, divergências e preparação/atualização de stock.','Must/Should'],
-      ['RF25–35','Exceções e governação','Prioridades, causas, alertas, dashboards e audit trail.','Must/Should'],
-      ['RF36–37','Histórico e dados','Histórico integral e exportação para análise.','Must/Should'],
-      ['RF38–40','Evolução avançada','Otimização automática, previsão de stock e ML. Demonstrado como roadmap, não autonomia produtiva.','Could']
-    ];
-    return `<div class="callout"><strong>Arquitetura do protótipo</strong>Aplicação web estática para demonstração funcional. A implementação produtiva deverá integrar PHC e uma camada de dados persistente, com autenticação, logging e APIs suportadas.</div>
-      <div class="grid two"><div class="card"><h2>Integrações</h2><table><tbody><tr><td>PHC</td><td>${badge('Simulado')}</td><td>Encomendas, stock e futura confirmação de stock.</td></tr><tr><td>Camada de dados</td><td>${badge('Protótipo')}</td><td>Estado mantido em memória no browser.</td></tr><tr><td>Power BI / Analytics</td><td>${badge('Preparado')}</td><td>Exportação CSV demonstrada.</td></tr><tr><td>Equipamentos</td><td>${badge('Fase futura')}</td><td>Não necessária para o MVP funcional definido.</td></tr></tbody></table></div>
-      <div class="card"><h2>Evolução inteligente</h2><p><strong>Human in the Loop permanece obrigatório.</strong> O protótipo pode gerar sugestões de planeamento, mas nunca altera o plano de forma autónoma.</p><div class="job"><strong>APS / otimização matemática</strong><small>Futura proposta de plano com restrições de capacidade, stock e datas.</small></div><div class="job"><strong>Previsão de stock</strong><small>Projeção com encomendas, produção e histórico.</small></div><div class="job"><strong>Machine Learning</strong><small>Após histórico suficiente e qualidade de dados validada.</small></div></div></div>
-      <div class="section-head" style="margin-top:20px"><div><h2>Cobertura funcional</h2><p>Mapeamento dos 40 requisitos funcionais definidos para a recomendação 3.</p></div></div><div class="feature-list">${features.map(f=>`<div class="feature"><div class="id">${f[0]} · ${f[3]}</div><strong>${f[1]}</strong><p>${f[2]}</p></div>`).join('')}</div>`;
+    const projections=state.products.map(p=>({product:p.id,value:projectedStock(p.id)}));
+    const risk=projections.filter(x=>x.value<0).length;
+    return `<div class="grid two">
+      <div class="card"><div class="section-head"><div><h2>Estado das integrações</h2><p>Disponibilidade dos serviços que suportam o fluxo operacional.</p></div></div>
+        <table><tbody>
+          <tr><td><strong>PHC</strong></td><td>${badge('Sincronizado')}</td><td>Encomendas e stock · ${state.syncedAt}</td></tr>
+          <tr><td><strong>Dados operacionais</strong></td><td>${badge('Ativo')}</td><td>Produção, corte, levantamento e histórico.</td></tr>
+          <tr><td><strong>Reporting</strong></td><td>${badge('Ativo')}</td><td>Indicadores operacionais e exportação estruturada.</td></tr>
+          <tr><td><strong>Auditoria</strong></td><td>${badge('Ativo')}</td><td>Registo de alterações, utilizadores e motivos.</td></tr>
+        </tbody></table>
+      </div>
+      <div class="card"><div class="section-head"><div><h2>Inteligência operacional</h2><p>Análise de stock, procura, produção em curso e capacidade.</p></div></div>
+        <div class="grid two">
+          <div class="kpi"><div class="label">Referências em risco</div><div class="value">${risk}</div><div class="delta ${risk?'bad':'good'}">projeção após ordens abertas</div></div>
+          <div class="kpi"><div class="label">Ordens prioritárias</div><div class="value">${state.orders.filter(o=>o.priority==='Alta').length}</div><div class="delta">com prioridade Alta</div></div>
+        </div>
+        <div style="margin-top:16px"><button class="primary-button" id="intelligence-plan">Calcular recomendação</button></div>
+      </div>
+    </div>
+    <div class="section-head" style="margin-top:20px"><div><h2>Projeção de stock</h2><p>Stock atual, produção ativa e necessidades das encomendas.</p></div></div>
+    <div class="grid three">${projections.map(x=>`<div class="card kpi"><div class="label">${x.product} · stock projetado</div><div class="value ${x.value<0?'bad':'good'}">${x.value}</div><div class="delta">unidades após execução corrente</div></div>`).join('')}</div>
+    <div class="section-head" style="margin-top:20px"><div><h2>Capacidades do sistema</h2><p>Controlo integrado do ciclo produtivo e suporte à decisão.</p></div></div>
+    <div class="feature-list">
+      <div class="feature"><div class="id">PLANEAMENTO</div><strong>Priorização automática</strong><p>Cruza stock, encomendas, capacidade e datas de entrega.</p></div>
+      <div class="feature"><div class="id">PRODUÇÃO</div><strong>Execução digital</strong><p>Ordens, estados, exceções e tempos num único fluxo.</p></div>
+      <div class="feature"><div class="id">RASTREABILIDADE</div><strong>Genealogia ponta a ponta</strong><p>Relaciona encomenda, produção, corte, levantamento e stock.</p></div>
+      <div class="feature"><div class="id">INTELIGÊNCIA</div><strong>Previsão e otimização</strong><p>Identifica risco de stock e recomenda prioridades de produção.</p></div>
+    </div>`;
   }
 };
 
-function orderRows(list){ return list.map(o=>`<tr><td><strong>${o.id}</strong></td><td>${o.client}</td><td>${o.product}<br><span class="note">${o.length}m</span></td><td>${o.qty}</td><td>${o.covered}</td><td><strong class="${uncovered(o)?'bad':'good'}">${uncovered(o)}</strong></td><td>${o.due}</td><td>${badge(o.priority)}</td><td><div class="row-actions"><button class="secondary-button" data-priority="${o.id}">Prioridade</button><button class="ghost-button" data-order-detail="${o.id}">Detalhe</button></div></td></tr>`).join(''); }
+function orderRows(list){
+  return list.map(o=>`<tr><td><strong>${o.id}</strong></td><td>${o.client}</td><td>${o.product}<br><span class="note">${o.length}m</span></td><td>${o.qty}</td><td>${o.covered}</td><td><strong class="${uncovered(o)?'bad':'good'}">${uncovered(o)}</strong></td><td>${o.due}</td><td>${badge(o.priority)}</td><td><div class="row-actions"><button class="secondary-button" data-priority="${o.id}">Prioridade</button><button class="ghost-button" data-order-detail="${o.id}">Detalhe</button></div></td></tr>`).join('');
+}
+
 function traceHTML(id){
-  const o=state.orders.find(x=>x.id===id)||state.orders[0]; const prod=state.productionOrders.find(p=>p.product===o.product); const cut=state.cutting.find(c=>c.product===o.product);
-  return `<div class="card"><div class="timeline"><div class="timeline-item"><strong>${o.id} · ${o.client}</strong><span>Encomenda PHC · ${o.qty} un. ${o.product} · entrega ${o.due}</span><p>Stock coberto: ${o.covered}; necessidade descoberta: ${uncovered(o)}.</p></div><div class="timeline-item"><strong>${prod?prod.id:'Produção ainda por planear'}</strong><span>${prod?`${prod.lane} · ${prod.status}`:'Sem ordem compatível'}</span><p>${prod?`${prod.qty} unidades em fluxo produtivo.`:'A solução sinaliza necessidade ao planeamento.'}</p></div><div class="timeline-item"><strong>${cut?cut.id:'Corte ainda não gerado'}</strong><span>${cut?`${cut.plannedQty} un. a ${cut.length}m · ${cut.status}`:'Será criado após produção compatível'}</span></div><div class="timeline-item"><strong>Levantamento e stock</strong><span>Confirmação digital e preparação de atualização no PHC.</span></div></div></div>`;
+  const o=state.orders.find(x=>x.id===id)||state.orders[0];
+  const prod=state.productionOrders.find(p=>p.product===o.product);
+  const cut=state.cutting.find(c=>c.product===o.product);
+  return `<div class="card"><div class="timeline">
+    <div class="timeline-item"><strong>${o.id} · ${o.client}</strong><span>Encomenda PHC · ${o.qty} un. ${o.product} · entrega ${o.due}</span><p>Stock coberto: ${o.covered}; necessidade descoberta: ${uncovered(o)}.</p></div>
+    <div class="timeline-item"><strong>${prod?prod.id:'Produção por planear'}</strong><span>${prod?`${prod.lane} · ${prod.status}`:'Aguardando ordem de produção'}</span><p>${prod?`${prod.qty} unidades em fluxo produtivo.`:'Necessidade encaminhada para planeamento.'}</p></div>
+    <div class="timeline-item"><strong>${cut?cut.id:'Corte por gerar'}</strong><span>${cut?`${cut.plannedQty} un. a ${cut.length}m · ${cut.status}`:'Aguardando produção disponível para corte'}</span></div>
+    <div class="timeline-item"><strong>Levantamento e stock</strong><span>Confirmação digital e atualização do stock no PHC.</span></div>
+  </div></div>`;
 }
 
 function bindView(){
   root.querySelectorAll('[data-go]').forEach(b=>b.onclick=()=>go(b.dataset.go));
-  const f=document.getElementById('order-filter'); if(f) f.oninput=()=>{document.getElementById('orders-body').innerHTML=orderRows(state.orders.filter(o=>(o.id+' '+o.client).toLowerCase().includes(f.value.toLowerCase()))); bindView();};
+  const f=document.getElementById('order-filter');
+  if(f) f.oninput=()=>{document.getElementById('orders-body').innerHTML=orderRows(state.orders.filter(o=>(o.id+' '+o.client).toLowerCase().includes(f.value.toLowerCase()))); bindView();};
   document.getElementById('export-csv')?.addEventListener('click',exportCSV);
   root.querySelectorAll('[data-priority]').forEach(b=>b.onclick=()=>changePriority(b.dataset.priority));
   root.querySelectorAll('[data-order-detail]').forEach(b=>b.onclick=()=>showOrder(b.dataset.orderDetail));
   root.querySelectorAll('[data-replan]').forEach(b=>b.onclick=()=>replan(b.dataset.replan));
   root.querySelectorAll('[data-details]').forEach(b=>b.onclick=()=>showProduction(b.dataset.details));
   document.getElementById('suggest-plan')?.addEventListener('click',suggestPlan);
-  document.getElementById('create-plan')?.addEventListener('click',newProductionOrder);
+  document.getElementById('create-plan')?.addEventListener('click',()=>newProductionOrder());
+  document.getElementById('intelligence-plan')?.addEventListener('click',suggestPlan);
   root.querySelectorAll('[data-start]').forEach(b=>b.onclick=()=>startProduction(b.dataset.start));
   root.querySelectorAll('[data-finish]').forEach(b=>b.onclick=()=>finishProduction(b.dataset.finish));
   root.querySelectorAll('[data-exception]').forEach(b=>b.onclick=()=>registerException(b.dataset.exception));
@@ -171,28 +243,145 @@ function bindView(){
   root.querySelectorAll('[data-cut-deviation]').forEach(b=>b.onclick=()=>cutDeviation(b.dataset.cutDeviation));
   root.querySelectorAll('[data-lift]').forEach(b=>b.onclick=()=>confirmLift(b.dataset.lift));
   document.getElementById('trace-run')?.addEventListener('click',()=>{document.getElementById('trace-result').innerHTML=traceHTML(document.getElementById('trace-select').value)});
-  document.getElementById('export-audit')?.addEventListener('click',()=>{const txt=state.audit.map(a=>`${a.when};${a.user};${a.action};${a.detail}`).join('\n'); const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([txt],{type:'text/plain'}));a.download='audit-pavimperio.txt';a.click();toast('Histórico exportado.');});
+  document.getElementById('export-audit')?.addEventListener('click',()=>{
+    const txt=state.audit.map(a=>`${a.when};${a.user};${a.action};${a.detail}`).join('\n');
+    const a=document.createElement('a');
+    a.href=URL.createObjectURL(new Blob([txt],{type:'text/plain'}));
+    a.download='audit-pavimperio.txt';
+    a.click();
+    toast('Histórico exportado.');
+  });
 }
 
-function go(view){state.currentView=view;render();}
-function log(action,detail,user='Utilizador demo'){state.audit.unshift({when:new Date().toLocaleString('pt-PT'),user,action,detail});}
-function changePriority(id){const o=state.orders.find(x=>x.id===id);modal('Alterar prioridade',`<div class="form-grid"><label>Prioridade<select id="p-priority"><option>Normal</option><option>Alta</option></select></label><label class="full">Motivo<textarea id="p-reason" placeholder="Justificação obrigatória"></textarea></label></div>`,`<button class="secondary-button" data-close="1">Cancelar</button><button class="primary-button" id="save-priority">Guardar</button>`);document.getElementById('p-priority').value=o.priority;document.getElementById('save-priority').onclick=()=>{const reason=document.getElementById('p-reason').value.trim();if(!reason){toast('É obrigatório indicar o motivo.','warning');return;}o.priority=document.getElementById('p-priority').value;log('Alteração de prioridade',`${id}: ${o.priority}. Motivo: ${reason}`);modalRoot.innerHTML='';render();toast('Prioridade atualizada e auditada.');};}
-function showOrder(id){const o=state.orders.find(x=>x.id===id);modal(`Encomenda ${id}`,`<p><strong>Cliente:</strong> ${o.client}</p><p><strong>Produto:</strong> ${o.product} · ${o.qty} un. · ${o.length}m</p><p><strong>Stock coberto:</strong> ${o.covered}</p><p><strong>Necessidade descoberta:</strong> ${uncovered(o)}</p><p><strong>Entrega:</strong> ${o.due}</p><p><strong>Estado:</strong> ${o.status}</p>`);}
-function replan(id){modal(`Replanear ${id}`,`<div class="form-grid"><label>Nova pista<select id="rp-lane">${state.lanes.map(l=>`<option>${l.id}</option>`).join('')}</select></label><label>Nova prioridade<select id="rp-priority"><option>Normal</option><option>Alta</option></select></label><label class="full">Motivo<select id="rp-reason"><option>Urgência comercial</option><option>Stock abaixo do mínimo</option><option>Avaria / indisponibilidade</option><option>Qualidade</option><option>Capacidade</option><option>Alteração de encomenda</option><option>Outro</option></select></label></div>`,`<button class="secondary-button" data-close="1">Cancelar</button><button class="primary-button" id="save-replan">Guardar alteração</button>`);document.getElementById('save-replan').onclick=()=>{log('Replaneamento',`${id}: pista ${document.getElementById('rp-lane').value}. Motivo: ${document.getElementById('rp-reason').value}.`,'Planeamento');modalRoot.innerHTML='';toast('Alteração registada sem eliminar o plano anterior.');};}
-function showProduction(id){const p=state.productionOrders.find(x=>x.id===id);modal(id,`<p><strong>Pista:</strong> ${p?.lane||'-'}</p><p><strong>Produto:</strong> ${p?.product||'-'}</p><p><strong>Quantidade:</strong> ${p?.qty||'-'}</p><p><strong>Estado:</strong> ${p?.status||'-'}</p><p><strong>Operador:</strong> ${p?.operator||'-'}</p>`);}
-function suggestPlan(){const needs=state.orders.filter(o=>uncovered(o)>0).sort((a,b)=>(a.priority==='Alta'?-1:1)-(b.priority==='Alta'?-1:1)); const n=needs[0];modal('Sugestão de planeamento',`<div class="callout"><strong>Recomendação gerada</strong>Produzir ${uncovered(n)} unidades de ${n.product} para ${n.id}, com prioridade ${n.priority}. A recomendação considera stock disponível, necessidade descoberta e data de entrega.</div><p><strong>Human in the Loop:</strong> esta recomendação não altera o plano até ser aprovada.</p>`,`<button class="secondary-button" data-close="1">Rejeitar</button><button class="primary-button" id="approve-suggestion">Aprovar e criar ordem</button>`);document.getElementById('approve-suggestion').onclick=()=>{modalRoot.innerHTML='';newProductionOrder(n.product,uncovered(n));};}
-function newProductionOrder(product='P1',qty=12){modal('Nova ordem de produção',`<div class="form-grid"><label>Produto<select id="np-product">${state.products.map(p=>`<option>${p.id}</option>`).join('')}</select></label><label>Quantidade<input id="np-qty" type="number" value="${qty}" min="1"></label><label>Pista<select id="np-lane">${state.lanes.map(l=>`<option>${l.id}</option>`).join('')}</select></label><label>Operador<input id="np-op" value="Operador demo"></label></div>`,`<button class="secondary-button" data-close="1">Cancelar</button><button class="primary-button" id="save-production">Criar ordem</button>`);document.getElementById('np-product').value=product;document.getElementById('save-production').onclick=()=>{const id='OP-'+String(Date.now()).slice(-6);state.productionOrders.push({id,lane:document.getElementById('np-lane').value,product:document.getElementById('np-product').value,qty:+document.getElementById('np-qty').value,status:'Planeada',started:'',finished:'',operator:document.getElementById('np-op').value});log('Ordem de produção criada',`${id} criada e sujeita a execução humana.`,'Planeamento');modalRoot.innerHTML='';render();toast(`${id} criada.`);};}
-function startProduction(id){const p=state.productionOrders.find(x=>x.id===id);p.status='Em produção';p.started=new Date().toLocaleString('pt-PT');log('Execução',`${id} iniciada.`,p.operator);render();toast('Produção iniciada.');}
-function finishProduction(id){const p=state.productionOrders.find(x=>x.id===id);p.status='Cura';p.finished=new Date().toLocaleString('pt-PT');log('Execução',`${id} concluída e passou para Cura.`,p.operator);render();toast('Produção concluída. Estado: Cura.');}
-function registerException(id){modal(`Exceção em ${id}`,`<div class="form-grid"><label class="full">Tipo<select id="ex-type"><option>Avaria / indisponibilidade</option><option>Qualidade</option><option>Capacidade</option><option>Material</option><option>Outro</option></select></label><label class="full">Descrição<textarea id="ex-note"></textarea></label></div>`,`<button class="secondary-button" data-close="1">Cancelar</button><button class="primary-button" id="save-ex">Registar</button>`);document.getElementById('save-ex').onclick=()=>{log('Exceção de produção',`${id}: ${document.getElementById('ex-type').value}. ${document.getElementById('ex-note').value}`);modalRoot.innerHTML='';toast('Exceção registada e auditada.');};}
-function confirmCut(id){const c=state.cutting.find(x=>x.id===id);modal(`Confirmar corte ${id}`,`<div class="form-grid"><label>Quantidade executada<input id="cut-qty" type="number" value="${c.plannedQty}"></label><label>Medida<input value="${c.length}m" disabled></label><label class="full">Observações<textarea id="cut-note"></textarea></label></div>`,`<button class="secondary-button" data-close="1">Cancelar</button><button class="primary-button" id="save-cut">Confirmar</button>`);document.getElementById('save-cut').onclick=()=>{const q=+document.getElementById('cut-qty').value;c.actualQty=q;c.status='Cortada';if(q!==c.plannedQty)c.deviation=`Planeado ${c.plannedQty}, executado ${q}`;log('Corte confirmado',`${id}: ${q} unidades. ${c.deviation}`,'Operador corte');if(!state.lifting.find(l=>l.cut===id))state.lifting.push({id:'OL-'+String(Date.now()).slice(-6),cut:id,product:c.product,qty:q,destination:'Stock A',status:'Pendente'});modalRoot.innerHTML='';render();toast('Corte confirmado e levantamento preparado.');};}
-function cutDeviation(id){modal(`Registar desvio ${id}`,`<div class="form-grid"><label class="full">Motivo<textarea id="dev-note" placeholder="Motivo obrigatório"></textarea></label></div>`,`<button class="secondary-button" data-close="1">Cancelar</button><button class="primary-button" id="save-dev">Guardar</button>`);document.getElementById('save-dev').onclick=()=>{const v=document.getElementById('dev-note').value.trim();if(!v){toast('Indique o motivo.','warning');return;}state.cutting.find(x=>x.id===id).deviation=v;log('Desvio de corte',`${id}: ${v}`,'Operador corte');modalRoot.innerHTML='';toast('Desvio registado.');};}
-function confirmLift(id){const l=state.lifting.find(x=>x.id===id);l.status='Concluída';state.stock[l.product]=(state.stock[l.product]||0)+l.qty;log('Levantamento e stock',`${id} concluída. Preparada atualização PHC: +${l.qty} ${l.product}.`,'Armazém');render();toast('Levantamento concluído e stock atualizado no protótipo.');}
+function go(view){ state.currentView=view; render(); }
+function log(action,detail,user='Utilizador'){ state.audit.unshift({when:new Date().toLocaleString('pt-PT'),user,action,detail}); }
+
+function changePriority(id){
+  const o=state.orders.find(x=>x.id===id);
+  modal('Alterar prioridade',`<div class="form-grid"><label>Prioridade<select id="p-priority"><option>Normal</option><option>Alta</option></select></label><label class="full">Motivo<textarea id="p-reason" placeholder="Justificação obrigatória"></textarea></label></div>`,`<button class="secondary-button" data-close="1">Cancelar</button><button class="primary-button" id="save-priority">Guardar</button>`);
+  document.getElementById('p-priority').value=o.priority;
+  document.getElementById('save-priority').onclick=()=>{
+    const reason=document.getElementById('p-reason').value.trim();
+    if(!reason){toast('É obrigatório indicar o motivo.','warning');return;}
+    o.priority=document.getElementById('p-priority').value;
+    log('Alteração de prioridade',`${id}: ${o.priority}. Motivo: ${reason}`);
+    modalRoot.innerHTML=''; render(); toast('Prioridade atualizada e auditada.');
+  };
+}
+
+function showOrder(id){
+  const o=state.orders.find(x=>x.id===id);
+  modal(`Encomenda ${id}`,`<p><strong>Cliente:</strong> ${o.client}</p><p><strong>Produto:</strong> ${o.product} · ${o.qty} un. · ${o.length}m</p><p><strong>Stock coberto:</strong> ${o.covered}</p><p><strong>Necessidade descoberta:</strong> ${uncovered(o)}</p><p><strong>Entrega:</strong> ${o.due}</p><p><strong>Estado:</strong> ${o.status}</p>`);
+}
+
+function replan(id){
+  modal(`Replanear ${id}`,`<div class="form-grid"><label>Nova pista<select id="rp-lane">${state.lanes.map(l=>`<option>${l.id}</option>`).join('')}</select></label><label>Nova prioridade<select id="rp-priority"><option>Normal</option><option>Alta</option></select></label><label class="full">Motivo<select id="rp-reason"><option>Urgência comercial</option><option>Stock abaixo do mínimo</option><option>Avaria / indisponibilidade</option><option>Qualidade</option><option>Capacidade</option><option>Alteração de encomenda</option><option>Outro</option></select></label></div>`,`<button class="secondary-button" data-close="1">Cancelar</button><button class="primary-button" id="save-replan">Guardar alteração</button>`);
+  document.getElementById('save-replan').onclick=()=>{
+    log('Replaneamento',`${id}: pista ${document.getElementById('rp-lane').value}. Motivo: ${document.getElementById('rp-reason').value}.`,'Planeamento');
+    modalRoot.innerHTML=''; toast('Alteração registada no histórico.');
+  };
+}
+
+function showProduction(id){
+  const p=state.productionOrders.find(x=>x.id===id);
+  modal(id,`<p><strong>Pista:</strong> ${p?.lane||'-'}</p><p><strong>Produto:</strong> ${p?.product||'-'}</p><p><strong>Quantidade:</strong> ${p?.qty||'-'}</p><p><strong>Estado:</strong> ${p?.status||'-'}</p><p><strong>Operador:</strong> ${p?.operator||'-'}</p>`);
+}
+
+function suggestPlan(){
+  const needs=state.orders.filter(o=>uncovered(o)>0).sort((a,b)=>{
+    if(a.priority!==b.priority) return a.priority==='Alta'?-1:1;
+    return a.due.localeCompare(b.due);
+  });
+  const n=needs[0];
+  if(!n){toast('Não existem necessidades sem cobertura.');return;}
+  modal('Recomendação de planeamento',`<div class="callout"><strong>Prioridade recomendada</strong>Produzir ${uncovered(n)} unidades de ${n.product} para ${n.id}. A análise considera stock disponível, produção em curso, prioridade e data de entrega.</div><p>A alteração será incorporada no plano após aprovação do responsável.</p>`,`<button class="secondary-button" data-close="1">Manter plano atual</button><button class="primary-button" id="approve-suggestion">Aprovar e criar ordem</button>`);
+  document.getElementById('approve-suggestion').onclick=()=>{modalRoot.innerHTML='';newProductionOrder(n.product,uncovered(n));};
+}
+
+function newProductionOrder(product='P1',qty=12){
+  modal('Nova ordem de produção',`<div class="form-grid"><label>Produto<select id="np-product">${state.products.map(p=>`<option>${p.id}</option>`).join('')}</select></label><label>Quantidade<input id="np-qty" type="number" value="${qty}" min="1"></label><label>Pista<select id="np-lane">${state.lanes.map(l=>`<option>${l.id}</option>`).join('')}</select></label><label>Operador<input id="np-op" value="Operador 01"></label></div>`,`<button class="secondary-button" data-close="1">Cancelar</button><button class="primary-button" id="save-production">Criar ordem</button>`);
+  document.getElementById('np-product').value=product;
+  document.getElementById('save-production').onclick=()=>{
+    const id='OP-'+String(Date.now()).slice(-6);
+    state.productionOrders.push({id,lane:document.getElementById('np-lane').value,product:document.getElementById('np-product').value,qty:+document.getElementById('np-qty').value,status:'Planeada',started:'',finished:'',operator:document.getElementById('np-op').value});
+    log('Ordem de produção criada',`${id} criada para ${document.getElementById('np-lane').value}.`,'Planeamento');
+    modalRoot.innerHTML=''; render(); toast(`${id} criada.`);
+  };
+}
+
+function startProduction(id){
+  const p=state.productionOrders.find(x=>x.id===id);
+  p.status='Em produção'; p.started=new Date().toLocaleString('pt-PT');
+  log('Execução',`${id} iniciada.`,p.operator); render(); toast('Produção iniciada.');
+}
+
+function finishProduction(id){
+  const p=state.productionOrders.find(x=>x.id===id);
+  p.status='Cura'; p.finished=new Date().toLocaleString('pt-PT');
+  log('Execução',`${id} concluída e passou para Cura.`,p.operator); render(); toast('Produção concluída. Estado: Cura.');
+}
+
+function registerException(id){
+  modal(`Exceção em ${id}`,`<div class="form-grid"><label class="full">Tipo<select id="ex-type"><option>Avaria / indisponibilidade</option><option>Qualidade</option><option>Capacidade</option><option>Material</option><option>Outro</option></select></label><label class="full">Descrição<textarea id="ex-note"></textarea></label></div>`,`<button class="secondary-button" data-close="1">Cancelar</button><button class="primary-button" id="save-ex">Registar</button>`);
+  document.getElementById('save-ex').onclick=()=>{
+    log('Exceção de produção',`${id}: ${document.getElementById('ex-type').value}. ${document.getElementById('ex-note').value}`);
+    modalRoot.innerHTML=''; toast('Exceção registada e auditada.');
+  };
+}
+
+function confirmCut(id){
+  const c=state.cutting.find(x=>x.id===id);
+  modal(`Confirmar corte ${id}`,`<div class="form-grid"><label>Quantidade executada<input id="cut-qty" type="number" value="${c.plannedQty}"></label><label>Medida<input value="${c.length}m" disabled></label><label class="full">Observações<textarea id="cut-note"></textarea></label></div>`,`<button class="secondary-button" data-close="1">Cancelar</button><button class="primary-button" id="save-cut">Confirmar</button>`);
+  document.getElementById('save-cut').onclick=()=>{
+    const q=+document.getElementById('cut-qty').value;
+    c.actualQty=q; c.status='Cortada';
+    if(q!==c.plannedQty)c.deviation=`Planeado ${c.plannedQty}, executado ${q}`;
+    log('Corte confirmado',`${id}: ${q} unidades. ${c.deviation}`,'Operador corte');
+    if(!state.lifting.find(l=>l.cut===id))state.lifting.push({id:'OL-'+String(Date.now()).slice(-6),cut:id,product:c.product,qty:q,destination:'Stock A',status:'Pendente'});
+    modalRoot.innerHTML=''; render(); toast('Corte confirmado e ordem de levantamento criada.');
+  };
+}
+
+function cutDeviation(id){
+  modal(`Registar desvio ${id}`,`<div class="form-grid"><label class="full">Motivo<textarea id="dev-note" placeholder="Motivo obrigatório"></textarea></label></div>`,`<button class="secondary-button" data-close="1">Cancelar</button><button class="primary-button" id="save-dev">Guardar</button>`);
+  document.getElementById('save-dev').onclick=()=>{
+    const v=document.getElementById('dev-note').value.trim();
+    if(!v){toast('Indique o motivo.','warning');return;}
+    state.cutting.find(x=>x.id===id).deviation=v;
+    log('Desvio de corte',`${id}: ${v}`,'Operador corte');
+    modalRoot.innerHTML=''; toast('Desvio registado.');
+  };
+}
+
+function confirmLift(id){
+  const l=state.lifting.find(x=>x.id===id);
+  l.status='Concluída';
+  state.stock[l.product]=(state.stock[l.product]||0)+l.qty;
+  log('Levantamento e stock',`${id} concluída. Stock PHC atualizado: +${l.qty} ${l.product}.`,'Armazém');
+  render(); toast('Levantamento concluído e stock atualizado.');
+}
 
 document.querySelectorAll('.nav-item').forEach(b=>b.onclick=()=>go(b.dataset.view));
 document.getElementById('menu-toggle').onclick=()=>document.getElementById('sidebar').classList.toggle('open');
-document.getElementById('sync-button').onclick=()=>{state.syncedAt=new Date().toLocaleString('pt-PT');log('Sincronização PHC','Leitura simulada de encomendas e stock concluída.','Sistema');render();toast('Sincronização PHC simulada concluída.');};
+document.getElementById('sync-button').onclick=()=>{
+  state.syncedAt=new Date().toLocaleString('pt-PT');
+  log('Sincronização PHC','Leitura de encomendas e stock concluída.','Sistema');
+  render(); toast('Sincronização PHC concluída.');
+};
 document.getElementById('new-order-button').onclick=()=>newProductionOrder();
-document.getElementById('global-search-button').onclick=()=>modal('Pesquisa global',`<div class="form-grid"><label class="full">Pesquisar<input id="global-search" placeholder="Encomenda, ordem, cliente ou produto"></label></div><p class="note">A pesquisa demonstra o requisito de consulta transversal. Use ENC-260821 ou P2.</p>`,`<button class="secondary-button" data-close="1">Fechar</button><button class="primary-button" id="run-global">Pesquisar</button>`);
-modalRoot.addEventListener('click',e=>{if(e.target.id==='run-global'){const q=document.getElementById('global-search').value.toLowerCase();const o=state.orders.find(x=>(x.id+x.client+x.product).toLowerCase().includes(q));modalRoot.innerHTML='';if(o){state.currentView='trace';render();setTimeout(()=>{const s=document.getElementById('trace-select');if(s){s.value=o.id;document.getElementById('trace-result').innerHTML=traceHTML(o.id)}},0);}else toast('Sem resultados.','warning');}});
+document.getElementById('global-search-button').onclick=()=>modal('Pesquisa global',`<div class="form-grid"><label class="full">Pesquisar<input id="global-search" placeholder="Encomenda, ordem, cliente ou produto"></label></div>`,`<button class="secondary-button" data-close="1">Fechar</button><button class="primary-button" id="run-global">Pesquisar</button>`);
+modalRoot.addEventListener('click',e=>{
+  if(e.target.id==='run-global'){
+    const q=document.getElementById('global-search').value.toLowerCase();
+    const o=state.orders.find(x=>(x.id+x.client+x.product).toLowerCase().includes(q));
+    modalRoot.innerHTML='';
+    if(o){
+      state.currentView='trace'; render();
+      setTimeout(()=>{
+        const s=document.getElementById('trace-select');
+        if(s){s.value=o.id;document.getElementById('trace-result').innerHTML=traceHTML(o.id);}
+      },0);
+    } else toast('Sem resultados.','warning');
+  }
+});
 render();
