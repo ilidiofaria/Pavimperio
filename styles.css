@@ -41,9 +41,9 @@ button{cursor:pointer}
 .job{border:1px solid var(--line);border-left:4px solid var(--navy-2);padding:14px 15px;border-radius:8px;margin-top:11px;background:#fbfcfd;transition:box-shadow .16s ease,border-color .16s ease,transform .16s ease}
 .job:hover{border-color:#cfd8df;box-shadow:0 5px 15px rgba(16,38,61,.06)}
 .job.priority{border-left-color:var(--red)}
-.job>strong{display:block;font-size:15px;line-height:1.35;color:var(--navy);letter-spacing:-.01em}
-.job>small{display:block;color:var(--muted);font-size:12.5px;line-height:1.55;margin-top:6px}
-.job>small+small{margin-top:3px}
+.job>strong{display:block!important;font-size:15px;line-height:1.35;color:var(--navy);letter-spacing:-.01em;margin:0 0 8px 0!important}
+.job>small{display:block!important;color:var(--muted);font-size:12.5px;line-height:1.55;margin:0!important}
+.job>small+small{margin-top:4px!important}
 .job>.progress{margin-top:10px}
 .job>.row-actions{margin-top:12px}
 .job .badge{margin-right:5px}
